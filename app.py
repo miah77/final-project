@@ -1,37 +1,38 @@
-# app.py - Streamlit skeleton for Bliss Tide COT FX Insights
+# app.py
 import streamlit as st
 import pandas as pd
-from pathlib import Path
-import plotly.graph_objects as go
+import altair as alt
+from analyze_cot import analyze_trends
 
-st.set_page_config(page_title='Bliss Tide COT FX Insights', layout='wide')
-st.title('Bliss Tide — COT FX Insights (Phase 1)')
+st.set_page_config(page_title="COT FX Dashboard", layout="wide")
 
-DATA = Path('cot_data_latest.csv')
-SAMPLE = Path('sample_cot_data.csv')
+st.title("📊 Commitment of Traders - FX Trends")
 
 @st.cache_data
 def load_data():
-    if DATA.exists():
-        df = pd.read_csv(DATA, parse_dates=['date'])
-    else:
-        df = pd.read_csv(SAMPLE, parse_dates=['date'])
+    try:
+        df = pd.read_csv("cot_data_latest.csv")
+    except FileNotFoundError:
+        st.warning("No live COT data found. Using sample fallback.")
+        df = pd.read_csv("cot_sample.csv")
     return df
 
-df = load_data()
+cot_df = load_data()
+analysis_df = analyze_trends(cot_df)
 
-st.sidebar.header('Controls')
-pairs = sorted(df['pair'].unique())
-pair = st.sidebar.selectbox('Pair', pairs)
+st.subheader("Trend Summary")
+st.dataframe(analysis_df, use_container_width=True)
 
-df_pair = df[df['pair']==pair].sort_values('date')
+pair = st.selectbox("Select Currency Pair", options=analysis_df['Pair'].unique())
+pair_data = cot_df[cot_df['Pair'] == pair].copy()
+pair_data['Date'] = pd.to_datetime(pair_data['Date'])
 
-st.subheader(f'{pair} — Net Specs & Open Interest')
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_pair['date'], y=df_pair['net_spec'], name='Net Spec'))
-fig.add_trace(go.Bar(x=df_pair['date'], y=df_pair['open_interest'], name='Open Interest', yaxis='y2'))
-fig.update_layout(yaxis2=dict(overlaying='y', side='right', title='Open Interest'))
-st.plotly_chart(fig, use_container_width=True)
+chart = alt.Chart(pair_data).mark_line(point=True).encode(
+    x="Date:T",
+    y="NonComm_Net:Q",
+    tooltip=["Date", "NonComm_Net"]
+).properties(
+    title=f"{pair} - Non-Commercial Net Positions"
+)
 
-st.subheader('Raw Data')
-st.dataframe(df_pair.reset_index(drop=True))
+st.altair_chart(chart, use_container_width=True)
